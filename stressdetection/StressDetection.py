@@ -68,11 +68,14 @@ class VideCapture:
 		_, frame = self.cap.read()
 		if flip:
 			frame = cv2.flip(frame, 1)
-		if resize is not None and len(resize) == 2:
+		if resize is not None and frame is not None and len(resize) == 2:
 			frame = cv2.resize(frame, resize)
 		self.frame = frame
 
 	def to_grayscale(self, image, resize=None):
+		if image is None:
+			print("Error: Input image is None")
+			return None
 		gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 		if resize is not None and len(resize) == 2:
 			gray = cv2.resize(gray, resize)
@@ -85,7 +88,8 @@ class VideCapture:
 		return cv2.resize(frame, new_size)
 
 	def start(self, input_video, resize_input, resize_output):
-		self.cap = cv2.VideoCapture(input_video)
+		# self.cap = cv2.VideoCapture(input_video)
+		self.cap = cv2.VideoCapture(0)
 		self.proc_size = resize_input
 		self.disp_size = resize_output
 
@@ -202,6 +206,8 @@ class Stress:
 			raw = np.fft.rfft(interpolated)
 			phase = np.angle(raw)
 			fft = np.abs(raw)
+			print(L)
+			print(self.fps)
 			freqs = float(self.fps) / L * np.arange(L / 2 + 1)
 			freqs = 60. * freqs
 			freqs = freqs[1:]
