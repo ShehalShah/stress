@@ -1,4 +1,4 @@
-from stressdetection.StressDetection import Stress
+from stressdetection.StressDetection4 import Stress
 import argparse
 
 parser = argparse.ArgumentParser()
