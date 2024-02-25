@@ -11,10 +11,19 @@ import numpy as np
 from PIL import ImageFont, ImageDraw, Image  
 import pyautogui
 import argparse
+import mediapipe as mp
+import time
+import joblib
 
 app = Flask(__name__)
 
-
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(static_image_mode=True)
+model_filename = 'posture_classifier_model.pkl'
+loaded_model = joblib.load(model_filename)
+posture_types = ['slouch', 'headforward', 'tilting', 'shoulders', 'leaning', 'normal']
+last_posture_time = time.time()
+predicted_posture="normal"
 
 parser = argparse.ArgumentParser()
 
@@ -219,8 +228,8 @@ class Stress:
             raw = np.fft.rfft(interpolated)
             phase = np.angle(raw)
             fft = np.abs(raw)
-            print(L)
-            print(self.fps)
+            # print(L)
+            # print(self.fps)
             freqs = float(self.fps) / L * np.arange(L / 2 + 1)
             freqs = 60. * freqs
             freqs = freqs[1:]
@@ -372,6 +381,46 @@ def eye_aspect_ratio(eye):
 def index():
     return render_template('index2.html')
 
+def extract_keypoints(image):
+    if image is None:
+        print("Error loading image")
+        return None
+    
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = pose.process(image_rgb)
+    
+    if results.pose_landmarks:
+        return [landmark.x for landmark in results.pose_landmarks.landmark] + [landmark.y for landmark in results.pose_landmarks.landmark]
+    else:
+        return None
+
+def detect_posture():
+    vs = VideoStream(src=0).start()
+    time.sleep(1.0)
+    global last_posture_time
+    while True:
+        frame = vs.read()
+        frame = imutils.resize(frame, width=450)
+        current_time = time.time()
+        if current_time - last_posture_time >= 2: 
+            last_posture_time = current_time
+            keypoints = extract_keypoints(frame)
+            if keypoints:
+                predicted_label = loaded_model.predict([keypoints])[0]
+                global predicted_posture
+                predicted_posture = posture_types[predicted_label]
+                print(f"Predicted Posture: {predicted_posture}")
+                cv2.putText(frame, f"Predicted Posture: {predicted_posture}", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                ret, jpeg3 = cv2.imencode('.jpg', frame)
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg3.tobytes() + b'\r\n')
+            else:
+                ret, jpeg3 = cv2.imencode('.jpg', frame)
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg3.tobytes() + b'\r\n')
+
+
 def detect_blinks():
     COUNTER = 0
     TOTAL = 0
@@ -422,6 +471,8 @@ def detect_blinks():
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv2.putText(frame, "EAR: {:.2f}".format(ear), (300, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(frame, f"Predicted Posture: {predicted_posture}", (10,150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
         ret, jpeg = cv2.imencode('.jpg', frame)
         yield (b'--frame\r\n'
@@ -444,6 +495,10 @@ def video_feed():
 @app.route('/stress_feed')
 def stress_feed():
     return Response(stress.run(args.input), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/posture_feed')
+def posture_feed():
+    return Response(detect_posture(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     app.run(debug=True)
