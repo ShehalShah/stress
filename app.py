@@ -438,7 +438,7 @@ def detect_blinks():
 
     while True:
         frame = vs.read()
-        frame = imutils.resize(frame, width=1400)
+        frame = imutils.resize(frame, width=450)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         rects = detector(gray, 0)
