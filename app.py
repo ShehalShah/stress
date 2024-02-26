@@ -438,7 +438,7 @@ def detect_blinks():
 
     while True:
         frame = vs.read()
-        frame = imutils.resize(frame, width=450)
+        frame = imutils.resize(frame, width=1400)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         rects = detector(gray, 0)
@@ -490,7 +490,6 @@ stress.display_fps(args.fps)
 @app.route('/video_feed')
 def video_feed():
     return Response(detect_blinks(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
 
 @app.route('/stress_feed')
 def stress_feed():
