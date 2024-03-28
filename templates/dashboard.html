@@ -24,6 +24,7 @@
             border-radius: 10px;
             overflow: hidden;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
         }
 
         h1 {
@@ -46,24 +47,32 @@
         <canvas id="postureChart"></canvas>
     </div>
 
+    <div class="chart-container">
+        <canvas id="blinkRateChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="stressChart"></canvas>
+    </div>
+
     <script>
         // Fetch data from the /fetch_users endpoint
         fetch('/fetch_users')
             .then(response => response.json())
             .then(data => {
                 // Prepare data for the pie chart
-                const labels = Object.keys(data.posture);
-                const values = Object.values(data.posture);
+                const postureLabels = Object.keys(data.posture);
+                const postureValues = Object.values(data.posture);
 
-                // Create the pie chart
-                const ctx = document.getElementById('postureChart').getContext('2d');
-                new Chart(ctx, {
+                // Create the posture pie chart
+                const postureCtx = document.getElementById('postureChart').getContext('2d');
+                new Chart(postureCtx, {
                     type: 'pie',
                     data: {
-                        labels: labels,
+                        labels: postureLabels,
                         datasets: [{
                             label: 'Posture',
-                            data: values,
+                            data: postureValues,
                             backgroundColor: [
                                 'rgba(255, 99, 132, 0.2)',
                                 'rgba(54, 162, 235, 0.2)',
@@ -86,6 +95,66 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false
+                    }
+                });
+
+                // Prepare data for the line chart
+                const blinkRateLabels = Array.from({ length: data.blinks.length }, (_, i) => i + 1);
+                const blinkRateValues = data.blinks;
+
+                // Create the blink rate line chart
+                const blinkRateCtx = document.getElementById('blinkRateChart').getContext('2d');
+                new Chart(blinkRateCtx, {
+                    type: 'line',
+                    data: {
+                        labels: blinkRateLabels,
+                        datasets: [{
+                            label: 'Blink Rate',
+                            data: blinkRateValues,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                });
+
+                // Prepare data for the bar chart
+                const stressLabels = data.stress.map(entry => entry.timestamp);
+                const stressValues = data.stress.map(entry => entry.stress_level);
+
+                // Create the stress bar chart
+                const stressCtx = document.getElementById('stressChart').getContext('2d');
+                new Chart(stressCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: stressLabels,
+                        datasets: [{
+                            label: 'Stress Level',
+                            data: stressValues,
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            xAxes: [{
+                                type: 'time',
+                                time: {
+                                    unit: 'minute'
+                                },
+                                ticks: {
+                                    autoSkip: true,
+                                    maxTicksLimit: 20 // Adjust the maximum number of ticks shown on the x-axis
+                                }
+                            }]
+                        }
                     }
                 });
             });

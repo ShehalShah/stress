@@ -16,14 +16,20 @@ import time
 import joblib
 # from flask_pymongo import PyMongo
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Column, Integer, Text, JSON
+from sqlalchemy import Column, Integer, Text, JSON, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 import json
 import threading
 import time
+from datetime import datetime
 
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
+import warnings
+import PIL
+
+# Suppress DeprecationWarnings raised by Pillow
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 app = Flask(__name__)
 
@@ -158,7 +164,7 @@ class User(Base):
     user_id = Column(Integer, primary_key=True)
     posture = Column(JSON)
     stress_level = Column(Text)
-    eye_blinks = Column(Text)
+    eye_blinks = Column(ARRAY(Integer))
 
     def __init__(self, user_id):
         # session.add(self)
@@ -174,27 +180,45 @@ class User(Base):
             self.posture[posture] = 1
 
     def add_stress_level(self, stress_level):
-        self.stress_level.append(stress_level)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
+        if(stress_level>10):
+            self.stress_level.append({'timestamp': timestamp, 'stress_level': stress_level})
+        print(self.stress_level,type(self.stress_level))
 
     def add_eye_blinks(self, eye_blinks):
         self.eye_blinks.append(eye_blinks)
 
+    def calculate_average_blink_rate(self, period_minutes):
+        if len(self.eye_blinks) < period_minutes:
+            return None # Not enough data to calculate average
+        return sum(self.eye_blinks[-period_minutes:]) / period_minutes
+
     def save(self):
         with app.app_context():
             # self.posture = json.dumps(self.posture)
-            self.stress_level = json.dumps(self.stress_level)
-            self.eye_blinks = json.dumps(self.eye_blinks)
+            # self.stress_level = json.dumps(self.stress_level)
+            # self.eye_blinks = json.dumps(self.eye_blinks)
             # Serialize the lists to JSON strings before saving
             # session.commit()
             # session.close()
             session = get_current_session()
             existing_user = session.query(User).filter_by(user_id=self.user_id).first()
-            print(existing_user)
+            # print(existing_user)
             if existing_user:
-                print("beoferee",existing_user.posture, type(existing_user.posture))
+                existing_user.eye_blinks = json.loads(existing_user.eye_blinks)
+                existing_user.eye_blinks.extend(self.eye_blinks)
+                existing_user.eye_blinks = json.dumps(existing_user.eye_blinks)
+                existing_user.stress_level = json.loads(existing_user.stress_level)
+
+                # print("beoferee",existing_user.posture, type(existing_user.posture))
+                print("beoferee",existing_user.stress_level, type(existing_user.stress_level))
                 # existing_user.posture = json.loads(existing_user.posture)
                 # Merge the existing posture counts with the new ones
-                print("after",existing_user.posture, type(self.posture))
+                # print("after",existing_user.posture, type(self.posture))
+                existing_user.stress_level.extend(self.stress_level)
+                print("mid",existing_user.stress_level, type(self.stress_level))
+                existing_user.stress_level = json.dumps(existing_user.stress_level)
+                print("after",existing_user.stress_level, type(self.stress_level))
                 existing_user.posture = {**existing_user.posture, **self.posture}
                 session.commit()
             else:
@@ -411,6 +435,7 @@ class Stress:
             cv2.circle(image, (x*self.resize_factor_width, y*self.resize_factor_height), 1, keypoints_color, -1)
 
     def run(self, input_video):
+        global start_time
         cap = VideCapture()
         cap.start(input_video, self.frame_resize, (self.screen_width, self.screen_height))
 
@@ -477,6 +502,15 @@ class Stress:
                     cap.disp = self.add_text_custom_font(cap.disp, stress_txt, 
                                                      position=(text_left_margin, text_upper_margin+space_text_line_upper+space_text_line_lower), 
                                                      font=font_bold, color=font_color)
+
+                    current_time = time.time()
+                    if current_time - start_time >= 60:
+                        print("60 SECONDS HA")
+                        # Assuming you have a user instance to update
+                        global user
+                        user.add_stress_level(self.stress)
+                        user.save() # Ensure this method saves the user instance to the database
+                        start_time = current_time
 
                     if self.disp_fps and self.fps is not None:
                         fps_txt = "{:.2f}fps".format(self.fps)
@@ -554,10 +588,10 @@ def detect_posture():
                 # global count
                 # if count == 0:
                 #     count += 1 
-                global user
+                # global user
                     
-                user.add_posture(predicted_posture)
-                user.save()
+                # user.add_posture(predicted_posture)
+                # user.save()
                 ret, jpeg3 = cv2.imencode('.jpg', frame)
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + jpeg3.tobytes() + b'\r\n')
@@ -566,8 +600,10 @@ def detect_posture():
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + jpeg3.tobytes() + b'\r\n')
 
+start_time = time.time()
 
 def detect_blinks():
+    global start_time
     COUNTER = 0
     TOTAL = 0
     print("Loading facial landmark predictor...")
@@ -612,6 +648,17 @@ def detect_blinks():
                     TOTAL += 1
 
                 COUNTER = 0
+
+                    # Check if 30 seconds have passed
+            current_time = time.time()
+            if current_time - start_time >= 20:
+                print("10 SECONDS HAVE PASSEDDDDDDD")
+                # Assuming you have a user instance to update
+                global user
+                user.add_eye_blinks(TOTAL * 3)
+                user.save() # Ensure this method saves the user instance to the database
+                TOTAL = 0
+                start_time = current_time
 
             cv2.putText(frame, "Blinks: {}".format(TOTAL), (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -664,7 +711,7 @@ def get_all_users():
     
     # Convert User objects to dictionaries
     # users_dict = [{'posture': user.posture} for user in users]
-    users_dict = {'posture': users.posture}
+    users_dict = {'posture': users.posture,'blinks':json.loads(users.eye_blinks),'stress':json.loads(users.stress_level)}
 
     return jsonify(users_dict)
 # def get_all_users():
