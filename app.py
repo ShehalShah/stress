@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response,jsonify,current_app
 from imutils.video import VideoStream
 from imutils.video import FPS
 from scipy.spatial import distance as dist
@@ -14,6 +14,16 @@ import argparse
 import mediapipe as mp
 import time
 import joblib
+# from flask_pymongo import PyMongo
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import Column, Integer, Text, JSON
+from sqlalchemy.ext.declarative import declarative_base
+import json
+import threading
+import time
+
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 
 app = Flask(__name__)
 
@@ -24,6 +34,13 @@ loaded_model = joblib.load(model_filename)
 posture_types = ['slouch', 'headforward', 'tilting', 'shoulders', 'leaning', 'normal']
 last_posture_time = time.time()
 predicted_posture="normal"
+count=0
+
+# app.config["MONGO_URI"] = "mongodb+srv://shehalshah264:nmmjkSsijDIwyb4i@cluster0.fpdocgu.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+# mongo = PyMongo(app)
+app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:rootpass@localhost/ipd"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
 parser = argparse.ArgumentParser()
 
@@ -74,6 +91,121 @@ forehead_height         = 60
 forehead_outline        = True
 forehead_outline_thik   = 1
 forehead_outline_color  = (255, 0, 0) 
+
+# class User:
+#     def __init__(self, user_id):
+#         self.user_id = user_id
+#         self.posture = []
+#         self.stress_level = []
+#         self.eye_blinks = []
+
+#     def add_posture(self, posture):
+#         self.posture.append(posture)
+
+#     def add_stress_level(self, stress_level):
+#         self.stress_level.append(stress_level)
+
+#     def add_eye_blinks(self, eye_blinks):
+#         self.eye_blinks.append(eye_blinks)
+
+#     def save(self):
+#         user_data = {
+#             "user_id": self.user_id,
+#             "posture": self.posture,
+#             "stress_level": self.stress_level,
+#             "eye_blinks": self.eye_blinks
+#         }
+#         mongo.db.users.update_one({"user_id": self.user_id}, {"$set": user_data}, upsert=True)
+
+# class User(db.Model):
+#     user_id = db.Column(db.Integer, primary_key=True)
+#     posture = db.Column(db.PickleType)
+#     stress_level = db.Column(db.PickleType)
+#     eye_blinks = db.Column(db.PickleType)
+
+#     def __init__(self, user_id):
+#         print("hiiii init")
+#         self.user_id = user_id
+#         self.posture = []
+#         self.stress_level = []
+#         self.eye_blinks = []
+
+#     def add_posture(self, posture):
+#         self.posture.append(posture)
+
+#     def add_stress_level(self, stress_level):
+#         self.stress_level.append(stress_level)
+
+#     def add_eye_blinks(self, eye_blinks):
+#         self.eye_blinks.append(eye_blinks)
+
+#     def save(self):
+#         with app.app_context():
+#             print(self.posture)
+#             db.session.add(self)
+#             db.session.commit()
+
+Base = declarative_base()
+
+def get_current_session():
+    engine = create_engine("mysql+pymysql://root:rootpass@localhost/ipd")
+    Session = sessionmaker(bind=engine)
+    return Session()
+
+session = get_current_session()
+class User(Base):
+    __tablename__ = 'user'
+    user_id = Column(Integer, primary_key=True)
+    posture = Column(JSON)
+    stress_level = Column(Text)
+    eye_blinks = Column(Text)
+
+    def __init__(self, user_id):
+        # session.add(self)
+        self.user_id = user_id
+        self.posture = {}
+        self.stress_level = []
+        self.eye_blinks = []
+
+    def add_posture(self, posture):
+        if posture in self.posture:
+            self.posture[posture] += 1
+        else:
+            self.posture[posture] = 1
+
+    def add_stress_level(self, stress_level):
+        self.stress_level.append(stress_level)
+
+    def add_eye_blinks(self, eye_blinks):
+        self.eye_blinks.append(eye_blinks)
+
+    def save(self):
+        with app.app_context():
+            # self.posture = json.dumps(self.posture)
+            self.stress_level = json.dumps(self.stress_level)
+            self.eye_blinks = json.dumps(self.eye_blinks)
+            # Serialize the lists to JSON strings before saving
+            # session.commit()
+            # session.close()
+            session = get_current_session()
+            existing_user = session.query(User).filter_by(user_id=self.user_id).first()
+            print(existing_user)
+            if existing_user:
+                print("beoferee",existing_user.posture, type(existing_user.posture))
+                # existing_user.posture = json.loads(existing_user.posture)
+                # Merge the existing posture counts with the new ones
+                print("after",existing_user.posture, type(self.posture))
+                existing_user.posture = {**existing_user.posture, **self.posture}
+                session.commit()
+            else:
+                session.add(self)
+                session.commit()
+            session.close()
+
+
+# db.create_all()
+with app.app_context():
+    db.create_all()
 
 class VideCapture:
     def __init__(self):
@@ -381,6 +513,10 @@ def eye_aspect_ratio(eye):
 def index():
     return render_template('index2.html')
 
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
 def extract_keypoints(image):
     if image is None:
         print("Error loading image")
@@ -412,6 +548,16 @@ def detect_posture():
                 print(f"Predicted Posture: {predicted_posture}")
                 cv2.putText(frame, f"Predicted Posture: {predicted_posture}", (10, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                # Assuming you have a user_id for the current user
+                # user = User(1)
+                # user=None
+                # global count
+                # if count == 0:
+                #     count += 1 
+                global user
+                    
+                user.add_posture(predicted_posture)
+                user.save()
                 ret, jpeg3 = cv2.imencode('.jpg', frame)
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + jpeg3.tobytes() + b'\r\n')
@@ -478,6 +624,16 @@ def detect_blinks():
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
 
+def update_posture_counts():
+    while True:
+        # Assuming `user` is a global variable holding the current user instance
+        global user
+        if user:
+            user.save() # Save the updated posture counts to the database
+        time.sleep(5) # Wait for 5 seconds before the next update
+
+# Start the background thread to update posture counts every 5 seconds
+threading.Thread(target=update_posture_counts, daemon=True).start()
 
 args = parser.parse_args()
 stress = Stress()
@@ -499,5 +655,27 @@ def stress_feed():
 def posture_feed():
     return Response(detect_posture(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/fetch_users')
+def get_all_users():
+    session = get_current_session()
+    # users = session.query(User).all()
+    users = session.query(User).filter_by(user_id=1).first()
+
+    
+    # Convert User objects to dictionaries
+    # users_dict = [{'posture': user.posture} for user in users]
+    users_dict = {'posture': users.posture}
+
+    return jsonify(users_dict)
+# def get_all_users():
+#     session = get_current_session()
+#     users = session.query(User).all()
+#     # users = User.query.all()
+#     print("use4rss",users)
+#     return jsonify([{user} for user in users])
+
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all() 
+        user = User(1)
     app.run(debug=True)
