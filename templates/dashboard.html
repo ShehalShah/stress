@@ -39,10 +39,28 @@
             max-width: 100%;
             max-height: 100%;
         }
+
+        .video-feed-button {
+            display: block;
+            width: 120px;
+            margin: 20px auto;
+            padding: 10px;
+            text-align: center;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .video-feed-button:hover {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 <body>
     <h1>Ergo Guard Dashboard</h1>
+    <button class="video-feed-button" onclick="redirectToVideoFeed()">Video Feed</button>
     <div class="chart-container">
         <canvas id="postureChart"></canvas>
     </div>
@@ -56,6 +74,12 @@
     </div>
 
     <script>
+
+        function redirectToVideoFeed() {
+            window.location.href = "/"; // Replace "/video_feed" with the actual URL of your video feed page
+        }
+
+
         // Fetch data from the /fetch_users endpoint
         fetch('/fetch_users')
             .then(response => response.json())

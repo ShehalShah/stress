@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signup</title>
+</head>
+<body>
+    <h2>Signup</h2>
+    <div id="signup-message"></div>
+    <form id="signup-form">
+        <label for="email">Email:</label><br>
+        <input type="email" id="email" name="email" required><br>
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" name="password" required><br>
+        <button type="button" onclick="signup()">Signup</button>
+    </form>
+    <p>Already have an account? <a href="/login">Login here</a>.</p>
+
+    <script>
+        function signup() {
+            var email = document.getElementById("email").value;
+            var password = document.getElementById("password").value;
+            var data = { email: email, password: password };
+            fetch('/signup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                window.location.href = data.redirect;
+            });
+        }
+    </script>
+</body>
+</html>

@@ -138,6 +138,7 @@
         <button class="tablinks active" onclick="openTab(event, 'Video')">Blink</button>
         <button class="tablinks" onclick="openTab(event, 'Posture')">Posture</button>
         <button class="tablinks" onclick="openTab(event, 'Stress')">Stress</button>
+        <button class="tablinks" onclick="redirectToDashboard()">Dashboard</button>
     </div>
     <div id="Video" class="content active">
         <div class="feed-container">
@@ -160,6 +161,11 @@
 </footer>
 
     <script>
+
+        function redirectToDashboard() {
+            window.location.href = "/dashboard"; // Replace "/dashboard" with the actual URL of your dashboard page
+        }
+        
         function openTab(evt, tabName) {
             var i, tabcontent, tablinks;
             tabcontent = document.getElementsByClassName("content");

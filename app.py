@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response,jsonify,current_app
+from flask import Flask, render_template, Response,jsonify,current_app,request,redirect,url_for
 from imutils.video import VideoStream
 from imutils.video import FPS
 from scipy.spatial import distance as dist
@@ -22,6 +22,7 @@ import json
 import threading
 import time
 from datetime import datetime
+from sqlalchemy.sql import text
 
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
@@ -98,6 +99,8 @@ forehead_outline        = True
 forehead_outline_thik   = 1
 forehead_outline_color  = (255, 0, 0) 
 
+uid=1
+
 # class User:
 #     def __init__(self, user_id):
 #         self.user_id = user_id
@@ -162,6 +165,8 @@ session = get_current_session()
 class User(Base):
     __tablename__ = 'user'
     user_id = Column(Integer, primary_key=True)
+    email = db.Column(db.String(255))
+    password = db.Column(db.String(255))
     posture = Column(JSON)
     stress_level = Column(Text)
     eye_blinks = Column(ARRAY(Integer))
@@ -202,6 +207,7 @@ class User(Base):
             # session.commit()
             # session.close()
             session = get_current_session()
+            print(self.user_id)
             existing_user = session.query(User).filter_by(user_id=self.user_id).first()
             # print(existing_user)
             if existing_user:
@@ -580,18 +586,19 @@ def detect_posture():
                 global predicted_posture
                 predicted_posture = posture_types[predicted_label]
                 print(f"Predicted Posture: {predicted_posture}")
-                cv2.putText(frame, f"Predicted Posture: {predicted_posture}", (10, 60),
+                cv2.putText(frame, f"Predicted Posture: {predicted_posture}", (10, 150),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                            
                 # Assuming you have a user_id for the current user
                 # user = User(1)
                 # user=None
                 # global count
                 # if count == 0:
                 #     count += 1 
-                # global user
+                global user
                     
-                # user.add_posture(predicted_posture)
-                # user.save()
+                user.add_posture(predicted_posture)
+                user.save()
                 ret, jpeg3 = cv2.imencode('.jpg', frame)
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + jpeg3.tobytes() + b'\r\n')
@@ -651,11 +658,11 @@ def detect_blinks():
 
                     # Check if 30 seconds have passed
             current_time = time.time()
-            if current_time - start_time >= 20:
-                print("10 SECONDS HAVE PASSEDDDDDDD")
+            if current_time - start_time >= 60:
+                print("60 SECONDS HAVE PASSEDDDDDDD")
                 # Assuming you have a user instance to update
                 global user
-                user.add_eye_blinks(TOTAL * 3)
+                user.add_eye_blinks(TOTAL)
                 user.save() # Ensure this method saves the user instance to the database
                 TOTAL = 0
                 start_time = current_time
@@ -706,7 +713,7 @@ def posture_feed():
 def get_all_users():
     session = get_current_session()
     # users = session.query(User).all()
-    users = session.query(User).filter_by(user_id=1).first()
+    users = session.query(User).filter_by(user_id=uid).first()
 
     
     # Convert User objects to dictionaries
@@ -714,6 +721,87 @@ def get_all_users():
     users_dict = {'posture': users.posture,'blinks':json.loads(users.eye_blinks),'stress':json.loads(users.stress_level)}
 
     return jsonify(users_dict)
+
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        data = request.json
+        email = data['email']
+        password = data['password']
+
+        posture_json = json.dumps({
+            "normal": 0, 
+            "slouch": 0, 
+            "leaning": 0, 
+            "tilting": 0, 
+            "shoulders": 0, 
+            "headforward": 0
+        })
+
+        # Insert new user into the database
+        session = get_current_session()
+        result=session.execute(
+            text("""
+            INSERT INTO user (email, password, posture, stress_level, eye_blinks)
+            VALUES (:email, :password, :posture, :stress_level, :eye_blinks)
+            """),
+            {
+                'email': email,
+                'password': password,
+                'posture': posture_json,
+                'stress_level': '[]',
+                'eye_blinks': '[]'
+            }
+        )
+        session.commit() 
+
+        global uid
+
+        uid = result.lastrowid
+
+        print(uid)
+
+        with app.app_context():
+            global user
+            db.create_all() 
+            user = User(uid)
+
+        return jsonify({'status': 'success', 'redirect': url_for('dashboard')})
+
+    return render_template('signup.html')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        data = request.json
+        email = data['email']
+        password = data['password']
+        session = get_current_session()
+
+        # Query the database for the user with the given email
+        user1 = session.query(User).filter_by(email=email).first()
+
+        with app.app_context():
+            global user
+            db.create_all() 
+            user = User(user1.user_id)
+
+        global uid
+
+        uid = user1.user_id
+
+        # Check if the user exists and the password matches directly
+        if user1 and user1.password == password:
+            # If the credentials are correct, return the user_id and redirect to the dashboard
+            return jsonify({'status': 'success', 'user_id': user1.user_id, 'redirect': url_for('dashboard')})
+        else:
+            # If the credentials are incorrect, return an error message
+            return jsonify({'status': 'error', 'message': 'Invalid email or password'})
+
+    return render_template('login.html')
+
 # def get_all_users():
 #     session = get_current_session()
 #     users = session.query(User).all()
@@ -724,5 +812,5 @@ def get_all_users():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all() 
-        user = User(1)
+        user = User(uid)
     app.run(debug=True)
